@@ -1,6 +1,6 @@
 # SB3 Converter & Extractor 
 
-A lightweight, open-source tool to extract Scratch 3 (`.sb3`) projects into clean, categorized directories
+A lightweight, open-source tool to extract Scratch projects into directories for usage outside the Scratch environment.
 
 ---
 # Project Structure
@@ -35,7 +35,7 @@ When an `.sb3` file is converted, an extracted directory is created:
 
 ---
 
-## Usage Instructions
+##  Usage Instructions
 
 ### 1. Python Desktop App
 Run the converter script:
@@ -53,6 +53,6 @@ Open [`index.html`](index.html) in your browser:
 
 ---
 
-## 📄 License
+## License
 
 This project is open-source and available under the [MIT License](LICENSE).
