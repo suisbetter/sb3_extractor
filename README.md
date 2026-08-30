@@ -1,22 +1,9 @@
-# SB3 Converter & Extractor 🚀
+# SB3 Converter & Extractor 
 
-A lightweight, open-source tool to extract Scratch 3 (`.sb3`) projects into clean, categorized directories and generate standalone, executable HTML players that run directly in any web browser.
-
----
-
-## ✨ Features
-
-- 🎮 **Executable HTML Player**: Generates a self-contained HTML file for every project powered by TurboWarp Scaffolding. Includes interactive controls (**▶ Start**, **⏹ Stop**, **⛶ Fullscreen**).
-- 📁 **Organized Asset Extraction**: Automatically sorts project contents into structured folders:
-  - `sb3/`: Contains `project.json` (and project metadata)
-  - `sound/`: Audio files (`.wav`, `.mp3`, `.ogg`, `.flac`, `.m4a`, etc.)
-  - `assets/`: Visual graphics and costumes (`.svg`, `.png`, `.jpg`, etc.)
-- 🖥️ **Modern Desktop GUI**: Sleek dark-mode Tkinter application with High-DPI scaling for crisp display on Windows.
-- 🌐 **Web Interface (`index.html`)**: Interactive browser-based project inspector with live sprite thumbnails, costume & sound counters, and one-click packaged ZIP downloads.
+A lightweight, open-source tool to extract Scratch 3 (`.sb3`) projects into clean, categorized directories
 
 ---
-
-## 📂 Output Structure
+# Project Structure
 
 When an `.sb3` file is converted, an extracted directory is created:
 
@@ -33,15 +20,6 @@ When an `.sb3` file is converted, an extracted directory is created:
     └── backdrop.png
 ```
 
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Python 3.8 or higher (with `tkinter` included)
-- Any modern web browser (Chrome, Edge, Firefox, Safari)
-
 ### Installation
 
 1. Clone the repository:
@@ -57,7 +35,7 @@ When an `.sb3` file is converted, an extracted directory is created:
 
 ---
 
-## 💻 Usage
+## Usage Instructions
 
 ### 1. Python Desktop App
 Run the converter script:
