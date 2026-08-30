@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Open Scratch Project</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg: #ececec;
+    --panel: #f7f7f7;
+    --border: #c9c9c9;
+    --border-dark: #a8a8a8;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --accent: #ff8c1a;
+    --accent-soft: #fff0dd;
+    --row-hover: #fff5e9;
+    --titlebar: #dedede;
+  }
+
+  *{ box-sizing: border-box; }
+
+  body{
+    margin:0;
+    font-family: -apple-system, "SF Pro Text", "Segoe UI", Helvetica, Arial, sans-serif;
+    background: #4a4a4a;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  .window{
+    width: 760px;
+    max-width: 100%;
+    background: var(--panel);
+    border-radius: 10px;
+    box-shadow: 0 30px 60px rgba(0,0,0,.45), 0 0 0 1px rgba(0,0,0,.08);
+    overflow: hidden;
+    border: 1px solid rgba(0,0,0,.15);
+    user-select: none;
+  }
+
+  /* Title bar */
+  .titlebar{
+    height: 40px;
+    background: linear-gradient(var(--titlebar), #d2d2d2);
+    display:flex;
+    align-items:center;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border-dark);
+    position: relative;
+  }
+  .dots{ display:flex; gap:8px; }
+  .dot{ width:12px; height:12px; border-radius:50%; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.2); }
+  .dot.red{ background:#ff5f57; }
+  .dot.yellow{ background:#febc2e; }
+  .dot.green{ background:#28c840; }
+  .title{
+    position:absolute; left:0; right:0; text-align:center;
+    font-size:13px; font-weight:600; color:#4a4a4a;
+    pointer-events:none;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .title svg{ width:14px; height:14px; }
+
+  /* Toolbar */
+  .toolbar{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding: 10px 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-btns{ display:flex; gap:4px; }
+  .nav-btn{
+    width:26px; height:26px;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:6px;
+    border:1px solid transparent;
+    background:transparent;
+    color: var(--muted);
+    cursor:pointer;
+  }
+  .nav-btn:hover{ background:#e4e4e4; border-color:var(--border); }
+  .nav-btn:disabled{ opacity:.35; cursor:default; }
+  .nav-btn:disabled:hover{ background:transparent; border-color:transparent; }
+  .nav-btn svg{ width:15px; height:15px; }
+
+  .breadcrumbs{
+    flex:1;
+    display:flex;
+    align-items:center;
+    gap:4px;
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:7px;
+    padding: 5px 10px;
+    font-size:13px;
+    color:var(--text);
+    overflow:hidden;
+    white-space:nowrap;
+  }
+  .crumb{ cursor:pointer; padding:2px 3px; border-radius:4px; color: var(--muted); }
+  .crumb:hover{ background: var(--accent-soft); color: var(--accent); }
+  .crumb.current{ color: var(--text); font-weight:600; cursor:default; }
+  .crumb.current:hover{ background:transparent; }
+  .sep{ color:#bbb; font-size:11px; }
+
+  .search{
+    width: 170px;
+    border:1px solid var(--border);
+    border-radius:7px;
+    padding: 5px 10px 5px 28px;
+    font-size:13px;
+    background:#fff url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="%23999" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>') no-repeat 8px center;
+    outline:none;
+  }
+  .search:focus{ border-color: var(--accent); }
+
+  /* Body: sidebar + list */
+  .body{
+    display:flex;
+    height: 340px;
+  }
+
+  .sidebar{
+    width: 170px;
+    background: #eef0f2;
+    border-right: 1px solid var(--border);
+    padding: 10px 0;
+    overflow-y:auto;
+  }
+  .sidebar h4{
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+    margin: 10px 14px 4px;
+    font-weight:600;
+  }
+  .side-item{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding: 5px 14px;
+    font-size:13px;
+    color: var(--text);
+    cursor:pointer;
+    border-radius: 6px;
+    margin: 0 6px;
+  }
+  .side-item svg{ width:15px; height:15px; flex-shrink:0; }
+  .side-item:hover{ background:#e2e6ea; }
+  .side-item.active{ background: var(--accent); color:#fff; }
+  .side-item.active svg{ color:#fff; }
+
+  .filelist{
+    flex:1;
+    overflow-y:auto;
+    background:#fff;
+    position: relative;
+  }
+  .list-head{
+    display:grid;
+    grid-template-columns: 1fr 110px 90px;
+    font-size:11px;
+    color: var(--muted);
+    padding: 7px 14px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top:0;
+    background:#fafafa;
+    font-weight:600;
+    z-index: 1;
+  }
+  .row{
+    display:grid;
+    grid-template-columns: 1fr 110px 90px;
+    align-items:center;
+    padding: 6px 14px;
+    font-size:13px;
+    cursor: default;
+    border-bottom: 1px solid #f2f2f2;
+  }
+  .row:hover{ background: var(--row-hover); }
+  .row.selected{ background: var(--accent); color:#fff; }
+  .row.selected .row-meta{ color: rgba(255,255,255,.85); }
+  .row.disabled{ opacity:.4; }
+  .row-name{ display:flex; align-items:center; gap:8px; overflow:hidden; }
+  .row-name span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row-meta{ color: var(--muted); font-size:12.5px; }
+  .icon{ width:18px; height:18px; flex-shrink:0; }
+
+  .empty{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    height:100%;
+    color: var(--muted);
+    font-size:13px;
+    gap:8px;
+  }
+
+  /* Real file drop overlay, shown over the list area */
+  .drop-overlay{
+    position:absolute;
+    inset:0;
+    background: rgba(255,140,26,.08);
+    border: 2px dashed var(--accent);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    font-size:13px;
+    font-weight:600;
+    color: var(--accent);
+    pointer-events:none;
+  }
+  .filelist.drag .drop-overlay{ display:flex; }
+
+  /* Preview panel (replaces list when a real sb3 is loaded) */
+  .preview{
+    display:none;
+    height:100%;
+    overflow-y:auto;
+    padding: 14px;
+  }
+  .preview.show{ display:block; }
+  .preview .summary{
+    display:grid;
+    grid-template-columns: repeat(4,1fr);
+    gap:8px;
+    margin-bottom:14px;
+  }
+  .preview .stat{
+    background:#faf5ee;
+    border:1px solid #eee0cc;
+    border-radius:8px;
+    padding:8px;
+    text-align:center;
+  }
+  .preview .stat .num{ font-size:17px; font-weight:800; color: var(--accent); }
+  .preview .stat .lbl{ font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+
+  .sprite-grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px,1fr));
+    gap:10px;
+  }
+  .sprite-card{
+    background:#fafafa;
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:8px;
+  }
+  .sprite-thumb{
+    width:100%;
+    height:56px;
+    border-radius:5px;
+    background: repeating-conic-gradient(#eee 0% 25%, #f6f6f6 0% 50%) 50% / 12px 12px;
+    display:flex; align-items:center; justify-content:center;
+    margin-bottom:6px;
+    overflow:hidden;
+  }
+  .sprite-thumb img{ max-width:100%; max-height:100%; object-fit:contain; }
+  .sprite-card .sname{ font-size:12px; font-weight:700; display:flex; align-items:center; gap:5px; }
+  .sprite-card .dot{ width:6px; height:6px; border-radius:50%; background:#9966ff; flex-shrink:0; }
+  .sprite-card.stage .dot{ background:#4c97ff; }
+  .sprite-card .smeta{ font-size:10.5px; color:var(--muted); margin-top:3px; line-height:1.5; }
+
+  /* Footer */
+  .footer{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .footer label{
+    font-size:13px;
+    color: var(--muted);
+    flex-shrink:0;
+  }
+  .filename{
+    flex:1;
+    border:1px solid var(--border);
+    border-radius:7px;
+    padding:7px 10px;
+    font-size:13px;
+    outline:none;
+    background:#fff;
+  }
+  .filename:focus{ border-color: var(--accent); }
+
+  select.filetype{
+    border:1px solid var(--border);
+    border-radius:7px;
+    padding:7px 10px;
+    font-size:13px;
+    background:#fff;
+    color: var(--text);
+    max-width: 150px;
+  }
+
+  .actions{
+    display:flex;
+    gap:8px;
+    padding: 0 16px 14px;
+    justify-content:flex-end;
+  }
+  .btn{
+    padding: 7px 18px;
+    border-radius:7px;
+    font-size:13px;
+    font-weight:500;
+    border:1px solid var(--border);
+    background:#fff;
+    color: var(--text);
+    cursor:pointer;
+  }
+  .btn:hover{ background:#f0f0f0; }
+  .btn.primary{
+    background: var(--accent);
+    border-color: var(--accent);
+    color:#fff;
+  }
+  .btn.primary:hover{ background:#eb7d0a; }
+  .btn.primary:disabled{
+    background:#f3caa0;
+    border-color:#f3caa0;
+    cursor:default;
+  }
+
+  ::-webkit-scrollbar{ width:10px; }
+  ::-webkit-scrollbar-thumb{ background:#c7c7c7; border-radius:6px; border:2px solid #f7f7f7; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+
+  #realFileInput{ display:none; }
+</style>
+</head>
+<body>
+
+<div class="window">
+  <div class="titlebar">
+    <div class="dots">
+      <div class="dot red"></div>
+      <div class="dot yellow"></div>
+      <div class="dot green"></div>
+    </div>
+    <div class="title">
+      <svg viewBox="0 0 24 24" fill="#ff8c1a"><circle cx="12" cy="12" r="10"/></svg>
+      Open Scratch Project
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="nav-btns">
+      <button class="nav-btn" id="backBtn" title="Back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <button class="nav-btn" id="fwdBtn" title="Forward" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+    </div>
+    <div class="breadcrumbs" id="breadcrumbs"></div>
+    <input class="search" id="searchBox" type="text" placeholder="Search">
+  </div>
+
+  <div class="body">
+    <div class="sidebar">
+      <h4>Favorites</h4>
+      <div class="side-item" data-path="Home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+        Home
+      </div>
+      <div class="side-item" data-path="Desktop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8M12 16v4"/></svg>
+        Desktop
+      </div>
+      <div class="side-item active" data-path="Scratch Projects">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+        Scratch Projects
+      </div>
+      <div class="side-item" data-path="Downloads">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>
+        Downloads
+      </div>
+      <h4>Locations</h4>
+      <div class="side-item" id="realBrowseItem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        Browse my computer…
+      </div>
+    </div>
+
+    <div class="filelist" id="filelist">
+      <div class="list-head" id="listHead">
+        <div>Name</div>
+        <div>Date Modified</div>
+        <div>Size</div>
+      </div>
+      <div id="rows"></div>
+      <div class="drop-overlay">Drop a .sb3 file to open it</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <label for="filenameInput">Name:</label>
+    <input class="filename" id="filenameInput" type="text" placeholder="Select a .sb3 project">
+    <select class="filetype" id="filetypeSelect">
+      <option>Scratch Projects (*.sb3)</option>
+      <option>All Files</option>
+    </select>
+  </div>
+  <div class="actions">
+    <button class="btn" id="cancelBtn">Cancel</button>
+    <button class="btn primary" id="openBtn" disabled>Open</button>
+  </div>
+</div>
+
+<input type="file" id="realFileInput" accept=".sb3">
+
+<script>
+  /* =========================================================
+     Fake filesystem — for browsing feel + demo project
+     ========================================================= */
+  const fs = {
+    "Home": [
+      { name: "Scratch Projects", type: "folder" },
+      { name: "Desktop", type: "folder" },
+      { name: "Downloads", type: "folder" },
+    ],
+    "Scratch Projects": [
+      { name: "Cat Chase Game", type: "sb3demo", size: "2.1 MB", date: "Aug 26, 2026" },
+      { name: "Music Maker.sb3", type: "file", size: "1.4 MB", date: "Aug 20, 2026" },
+      { name: "old-drafts", type: "folder" },
+    ],
+    "old-drafts": [
+      { name: "Platformer v1.sb3", type: "file", size: "3.0 MB", date: "Jul 2, 2026" },
+      { name: "notes.txt", type: "file", size: "1 KB", date: "Jul 2, 2026" },
+    ],
+    "Desktop": [
+      { name: "Screenshot 2026-08-28.png", type: "file", size: "1.4 MB", date: "Aug 28, 2026" },
+    ],
+    "Downloads": [
+      { name: "Space Explorer.sb3", type: "file", size: "5.6 MB", date: "Aug 15, 2026" },
+      { name: "installer.dmg", type: "file", size: "220 MB", date: "Aug 15, 2026" },
+    ],
+  };
+
+  const folderIcon = `<svg class="icon" viewBox="0 0 24 24" fill="#8fbcff" stroke="#5b93e6" stroke-width="1"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>`;
+  const fileIcon = `<svg class="icon" viewBox="0 0 24 24" fill="#f0f0f0" stroke="#a0a0a0" stroke-width="1"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6" fill="none" stroke="#a0a0a0"/></svg>`;
+  const sb3Icon = `<svg class="icon" viewBox="0 0 24 24" fill="#ff8c1a"><circle cx="12" cy="12" r="10"/><circle cx="9" cy="10" r="1.3" fill="#1c1a29"/><circle cx="15" cy="10" r="1.3" fill="#1c1a29"/><path d="M8.5 14.5c1 .8 2.2 1.2 3.5 1.2s2.5-.4 3.5-1.2" stroke="#1c1a29" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>`;
+
+  let path = ["Home", "Scratch Projects"];
+  let history = [ [...path] ];
+  let historyIndex = 0;
+  let selected = null;
+  let loadedZip = null;      // JSZip instance once a real .sb3 has been opened
+  let loadedProject = null;  // parsed project.json
+  let assetUrls = {};
+
+  const rowsEl = document.getElementById('rows');
+  const listHeadEl = document.getElementById('listHead');
+  const filelistEl = document.getElementById('filelist');
+  const crumbsEl = document.getElementById('breadcrumbs');
+  const filenameInput = document.getElementById('filenameInput');
+  const openBtn = document.getElementById('openBtn');
+  const backBtn = document.getElementById('backBtn');
+  const fwdBtn = document.getElementById('fwdBtn');
+  const realFileInput = document.getElementById('realFileInput');
+
+  function currentFolder(){ return path[path.length - 1]; }
+
+  /* =========================================================
+     Browsing the fake filesystem
+     ========================================================= */
+  function render(){
+    clearPreview();
+
+    crumbsEl.innerHTML = '';
+    path.forEach((p, i) => {
+      const el = document.createElement('span');
+      el.className = 'crumb' + (i === path.length - 1 ? ' current' : '');
+      el.textContent = p;
+      el.addEventListener('click', () => {
+        if (i === path.length - 1) return;
+        navigateTo(path.slice(0, i + 1));
+      });
+      crumbsEl.appendChild(el);
+      if (i < path.length - 1){
+        const sep = document.createElement('span');
+        sep.className = 'sep';
+        sep.textContent = '›';
+        crumbsEl.appendChild(sep);
+      }
+    });
+
+    document.querySelectorAll('.side-item[data-path]').forEach(item => {
+      item.classList.toggle('active', item.dataset.path === currentFolder());
+    });
+
+    rowsEl.innerHTML = '';
+    listHeadEl.style.display = '';
+    const items = fs[currentFolder()] || [];
+    selected = null;
+    updateFooter();
+
+    if (items.length === 0){
+      rowsEl.innerHTML = `<div class="empty">This folder is empty</div>`;
+      return;
+    }
+
+    const sorted = [...items].sort((a, b) => {
+      const aFolder = a.type === 'folder';
+      const bFolder = b.type === 'folder';
+      if (aFolder !== bFolder) return aFolder ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    sorted.forEach(item => {
+      const row = document.createElement('div');
+      const isSb3 = item.type === 'sb3demo' || /\.sb3$/i.test(item.name);
+      row.className = 'row';
+      const icon = item.type === 'folder' ? folderIcon : (isSb3 ? sb3Icon : fileIcon);
+      row.innerHTML = `
+        <div class="row-name">${icon}<span>${item.name}</span></div>
+        <div class="row-meta">${item.date || '—'}</div>
+        <div class="row-meta">${item.type === 'folder' ? '--' : item.size}</div>
+      `;
+      row.addEventListener('click', () => selectRow(row, item));
+      row.addEventListener('dblclick', () => {
+        if (item.type === 'folder') openFolder(item.name);
+        else if (item.type === 'sb3demo') loadDemoProject();
+        else{
+          // any other listed .sb3 in the mock fs: prompt the user to actually
+          // pick the real file, since we can't read arbitrary disk files from JS
+          promptRealFile();
+        }
+      });
+      rowsEl.appendChild(row);
+    });
+  }
+
+  function selectRow(row, item){
+    document.querySelectorAll('.row.selected').forEach(r => r.classList.remove('selected'));
+    row.classList.add('selected');
+    selected = item;
+    if (item.type !== 'folder'){
+      filenameInput.value = item.name;
+    }
+    updateFooter();
+  }
+
+  function updateFooter(){
+    const hasRealProject = !!loadedProject;
+    openBtn.disabled = !hasRealProject && !(selected && selected.type !== 'folder') && filenameInput.value.trim() === '';
+  }
+
+  function openFolder(name){
+    if (!fs[name]) return;
+    navigateTo([...path, name]);
+  }
+
+  function navigateTo(newPath){
+    path = newPath;
+    history = history.slice(0, historyIndex + 1);
+    history.push([...path]);
+    historyIndex = history.length - 1;
+    filenameInput.value = '';
+    updateNavButtons();
+    render();
+  }
+
+  function updateNavButtons(){
+    backBtn.disabled = historyIndex <= 0;
+    fwdBtn.disabled = historyIndex >= history.length - 1;
+  }
+
+  backBtn.addEventListener('click', () => {
+    if (historyIndex > 0){
+      historyIndex--;
+      path = [...history[historyIndex]];
+      filenameInput.value = '';
+      updateNavButtons();
+      render();
+    }
+  });
+  fwdBtn.addEventListener('click', () => {
+    if (historyIndex < history.length - 1){
+      historyIndex++;
+      path = [...history[historyIndex]];
+      filenameInput.value = '';
+      updateNavButtons();
+      render();
+    }
+  });
+
+  document.querySelectorAll('.side-item[data-path]').forEach(item => {
+    item.addEventListener('click', () => {
+      const target = item.dataset.path;
+      if (target === 'Home'){ navigateTo(['Home']); return; }
+      navigateTo(['Home', target]);
+    });
+  });
+
+  filenameInput.addEventListener('input', updateFooter);
+
+  document.getElementById('searchBox').addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    document.querySelectorAll('.row').forEach(row => {
+      const name = row.querySelector('.row-name span')?.textContent.toLowerCase() || '';
+      row.style.display = name.includes(q) ? '' : 'none';
+    });
+  });
+
+  /* =========================================================
+     Real file opening — actual .sb3 parsing via JSZip
+     ========================================================= */
+  document.getElementById('realBrowseItem').addEventListener('click', promptRealFile);
+
+  function promptRealFile(){
+    realFileInput.click();
+  }
+
+  realFileInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) loadRealFile(file);
+  });
+
+  // Drag & drop a real file onto the list area
+  filelistEl.addEventListener('dragover', e => { e.preventDefault(); filelistEl.classList.add('drag'); });
+  filelistEl.addEventListener('dragleave', () => filelistEl.classList.remove('drag'));
+  filelistEl.addEventListener('drop', e => {
+    e.preventDefault();
+    filelistEl.classList.remove('drag');
+    const file = e.dataTransfer.files[0];
+    if (file) loadRealFile(file);
+  });
+
+  async function loadRealFile(file){
+    if (!file.name.toLowerCase().endsWith('.sb3')){
+      alert("That doesn't look like a .sb3 file — please choose a Scratch project export.");
+      return;
+    }
+    filenameInput.value = file.name;
+    try{
+      const buffer = await file.arrayBuffer();
+      const zip = await JSZip.loadAsync(buffer);
+      const projectFile = zip.file('project.json');
+      if (!projectFile) throw new Error('no project.json found inside the archive');
+      const project = JSON.parse(await projectFile.async('string'));
+      loadedZip = zip;
+      loadedProject = project;
+      await showPreview(zip, project);
+      updateFooter();
+    }catch(err){
+      alert("Couldn't read that file: " + err.message);
+    }
+  }
+
+  function clearPreview(){
+    loadedZip = null;
+    loadedProject = null;
+    Object.values(assetUrls).forEach(u => URL.revokeObjectURL(u));
+    assetUrls = {};
+    const existing = filelistEl.querySelector('.preview');
+    if (existing) existing.classList.remove('show');
+  }
+
+  async function showPreview(zip, project){
+    listHeadEl.style.display = 'none';
+    rowsEl.innerHTML = '';
+
+    let preview = filelistEl.querySelector('.preview');
+    if (!preview){
+      preview = document.createElement('div');
+      preview.className = 'preview';
+      filelistEl.insertBefore(preview, filelistEl.querySelector('.drop-overlay'));
+    }
+    preview.classList.add('show');
+    preview.innerHTML = `<div style="font-size:12px;color:var(--muted);">Reading project…</div>`;
+
+    const targets = project.targets || [];
+    const stage = targets.find(t => t.isStage);
+    const sprites = targets.filter(t => !t.isStage);
+    const totalCostumes = targets.reduce((n, t) => n + (t.costumes || []).length, 0);
+    const totalSounds = targets.reduce((n, t) => n + (t.sounds || []).length, 0);
+
+    // preload thumbnails
+    const wanted = new Set();
+    targets.forEach(t => {
+      const c = (t.costumes || [])[t.currentCostume || 0];
+      if (c) wanted.add(c.md5ext || (c.assetId + '.' + c.dataFormat));
+    });
+    for (const name of wanted){
+      const entry = zip.file(name);
+      if (!entry) continue;
+      const ext = name.split('.').pop().toLowerCase();
+      const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'png' ? 'image/png' : 'image/jpeg';
+      const blob = await entry.async('blob');
+      assetUrls[name] = URL.createObjectURL(new Blob([blob], { type: mime }));
+    }
+
+    const allTargets = stage ? [stage, ...sprites] : sprites;
+    const cards = allTargets.map(t => {
+      const c = (t.costumes || [])[t.currentCostume || 0];
+      const thumbName = c ? (c.md5ext || (c.assetId + '.' + c.dataFormat)) : null;
+      const url = thumbName ? assetUrls[thumbName] : null;
+      const label = t.isStage ? 'Stage' : t.name;
+      return `
+        <div class="sprite-card ${t.isStage ? 'stage' : ''}">
+          <div class="sprite-thumb">${url ? `<img src="${url}">` : ''}</div>
+          <div class="sname"><span class="dot"></span>${escapeHtml(label)}</div>
+          <div class="smeta">${(t.costumes||[]).length} costumes · ${(t.sounds||[]).length} sounds</div>
+        </div>
+      `;
+    }).join('');
+
+    preview.innerHTML = `
+      <div class="summary">
+        <div class="stat"><div class="num">${sprites.length}</div><div class="lbl">Sprites</div></div>
+        <div class="stat"><div class="num">${totalCostumes}</div><div class="lbl">Costumes</div></div>
+        <div class="stat"><div class="num">${totalSounds}</div><div class="lbl">Sounds</div></div>
+        <div class="stat"><div class="num">${Object.keys(zip.files).filter(n=>!zip.files[n].dir).length}</div><div class="lbl">Files</div></div>
+      </div>
+      <div class="sprite-grid">${cards}</div>
+    `;
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  /* =========================================================
+     Demo project — lets the dialog feel real without a real file
+     ========================================================= */
+  async function loadDemoProject(){
+    filenameInput.value = 'Cat Chase Game';
+    const zip = new JSZip();
+    const catSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="#ff8c1a"/><circle cx="38" cy="42" r="5" fill="#1c1a29"/><circle cx="62" cy="42" r="5" fill="#1c1a29"/><path d="M35 62c5 5 10 8 15 8s10-3 15-8" stroke="#1c1a29" stroke-width="4" fill="none" stroke-linecap="round"/></svg>`;
+    const mouseSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><ellipse cx="50" cy="55" rx="35" ry="28" fill="#9b97b8"/><circle cx="50" cy="30" r="6" fill="#9b97b8"/></svg>`;
+    const project = {
+      targets: [
+        { isStage: true, name: 'Stage', currentCostume: 0, costumes: [{ name: 'backdrop1', assetId: 'stagebg', dataFormat: 'svg', md5ext: 'stagebg.svg' }], sounds: [], blocks: {} },
+        { isStage: false, name: 'Cat', currentCostume: 0, costumes: [{ name: 'cat-a', assetId: 'catcostume', dataFormat: 'svg', md5ext: 'catcostume.svg' }], sounds: [{ name: 'Meow', assetId: 'meow', dataFormat: 'wav', md5ext: 'meow.wav' }], blocks: { b1:{}, b2:{}, b3:{} } },
+        { isStage: false, name: 'Mouse', currentCostume: 0, costumes: [{ name: 'mouse-a', assetId: 'mousecostume', dataFormat: 'svg', md5ext: 'mousecostume.svg' }], sounds: [], blocks: { b1:{}, b2:{} } },
+      ],
+      meta: { vm: '0.2.0' }
+    };
+    zip.file('project.json', JSON.stringify(project));
+    zip.file('stagebg.svg', `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#cdeafe"/></svg>`);
+    zip.file('catcostume.svg', catSvg);
+    zip.file('mousecostume.svg', mouseSvg);
+    zip.file('meow.wav', new Uint8Array([82,73,70,70]));
+
+    loadedZip = zip;
+    loadedProject = project;
+    await showPreview(zip, project);
+    updateFooter();
+  }
+
+  /* =========================================================
+     Generate Executable HTML Runner
+     ========================================================= */
+  function generateExecutableHtml(baseName, base64Data) {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${escapeHtml(baseName)}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 0;
+            background: #111827;
+            color: #f9fafb;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 480px;
+            max-width: 95vw;
+            margin-bottom: 12px;
+            padding: 0 4px;
+        }
+        #title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #e5e7eb;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        #controls {
+            display: flex;
+            gap: 8px;
+        }
+        .btn {
+            border: none;
+            outline: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:active { transform: scale(0.96); }
+        .btn-green { background-color: #22c55e; color: #ffffff; }
+        .btn-stop { background-color: #ef4444; color: #ffffff; }
+        .btn-fullscreen { background-color: #374151; color: #ffffff; }
+        .btn:hover { opacity: 0.9; }
+        #player-wrapper {
+            position: relative;
+            width: 480px;
+            height: 360px;
+            max-width: 95vw;
+            max-height: calc(95vw * 0.75);
+            background-color: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+        }
+        #player-container { width: 100%; height: 100%; }
+        #loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #1f2937;
+            z-index: 10;
+            font-size: 16px;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 12px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+    <!-- TurboWarp Scaffolding player engine -->
+    <script src="https://packager.turbowarp.org/scaffolding/scaffolding-min.js"><\/script>
+</head>
+<body>
+    <div id="header">
+        <div id="title">${escapeHtml(baseName)}</div>
+        <div id="controls">
+            <button id="greenflag" class="btn btn-green" title="Start">▶ Start</button>
+            <button id="stop" class="btn btn-stop" title="Stop">⏹ Stop</button>
+            <button id="fullscreen" class="btn btn-fullscreen" title="Fullscreen">⛶ Fullscreen</button>
+        </div>
+    </div>
+    
+    <div id="player-wrapper">
+        <div id="loading">
+            <div class="spinner"></div>
+            <div>Loading Scratch Project...</div>
+        </div>
+        <div id="player-container"></div>
+    </div>
+
+    <script>
+        const projectBase64 = "${base64Data}";
+
+        async function initPlayer() {
+            try {
+                const binary = atob(projectBase64);
+                const len = binary.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+
+                const scaffolding = new Scaffolding.Scaffolding();
+                scaffolding.width = 480;
+                scaffolding.height = 360;
+                scaffolding.resizeMode = "preserve-ratio";
+                scaffolding.setup();
+
+                const container = document.getElementById("player-container");
+                scaffolding.appendTo(container);
+
+                await scaffolding.loadProject(bytes.buffer);
+
+                document.getElementById("loading").style.display = "none";
+                scaffolding.greenFlag();
+
+                document.getElementById("greenflag").onclick = () => scaffolding.greenFlag();
+                document.getElementById("stop").onclick = () => scaffolding.stopAll();
+                document.getElementById("fullscreen").onclick = () => {
+                    const wrapper = document.getElementById("player-wrapper");
+                    if (!document.fullscreenElement) {
+                        wrapper.requestFullscreen().catch(err => console.error(err));
+                    } else {
+                        document.exitFullscreen();
+                    }
+                };
+            } catch (err) {
+                document.getElementById("loading").innerHTML = '<div style="color:#ef4444;padding:20px;text-align:center;">Failed to load project: ' + err.message + '</div>';
+            }
+        }
+
+        window.addEventListener("DOMContentLoaded", initPlayer);
+    <\/script>
+</body>
+</html>`;
+  }
+
+  /* =========================================================
+     Open / Cancel
+     ========================================================= */
+  openBtn.addEventListener('click', async () => {
+    if (!loadedProject || !loadedZip){
+      const name = filenameInput.value.trim();
+      if (!name) return;
+      promptRealFile();
+      return;
+    }
+
+    openBtn.disabled = true;
+    openBtn.textContent = 'Extracting...';
+
+    try {
+      const baseName = filenameInput.value.replace(/\.sb3$/i, '') || 'ScratchProject';
+      const soundExtensions = ['.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac', '.wma'];
+
+      // Get raw buffer of the sb3 file for executable HTML embedding
+      const sb3Buffer = await loadedZip.generateAsync({ type: 'arraybuffer' });
+      let binary = '';
+      const bytes = new Uint8Array(sb3Buffer);
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64Data = btoa(binary);
+      const htmlContent = generateExecutableHtml(baseName, base64Data);
+
+      // Create new clean organized ZIP
+      const newZip = new JSZip();
+      let counts = { sb3: 0, sound: 0, assets: 0 };
+
+      // Put executable HTML inside sb3/
+      newZip.file(`sb3/${baseName}.html`, htmlContent);
+
+      for (const [filename, fileEntry] of Object.entries(loadedZip.files)) {
+        if (fileEntry.dir) continue;
+        const lower = filename.toLowerCase();
+        const base = filename.split('/').pop();
+        const ext = '.' + lower.split('.').pop();
+        const data = await fileEntry.async('uint8array');
+
+        if (lower === 'project.json' || lower.endsWith('.json')) {
+          newZip.file(`sb3/${base}`, data);
+          counts.sb3++;
+        } else if (soundExtensions.includes(ext)) {
+          newZip.file(`sound/${base}`, data);
+          counts.sound++;
+        } else {
+          newZip.file(`assets/${base}`, data);
+          counts.assets++;
+        }
+      }
+
+      // Generate downloadable zip bundle
+      const outBlob = await newZip.generateAsync({ type: 'blob' });
+      const downloadUrl = URL.createObjectURL(outBlob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `${baseName}_extracted.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+
+      // Option to launch player directly
+      const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
+      const playerUrl = URL.createObjectURL(htmlBlob);
+
+      const playNow = confirm(
+        `Extraction Complete!\n\n` +
+        `• Downloaded: ${baseName}_extracted.zip\n` +
+        `• Project JSON (sb3/): ${counts.sb3} file(s)\n` +
+        `• Executable HTML (sb3/): ${baseName}.html\n` +
+        `• Sound files (sound/): ${counts.sound} file(s)\n` +
+        `• Assets (assets/): ${counts.assets} file(s)\n\n` +
+        `Would you like to play the project in your browser now?`
+      );
+      if (playNow) {
+        window.open(playerUrl, '_blank');
+      }
+    } catch (err) {
+      alert('Error during conversion: ' + err.message);
+    } finally {
+      openBtn.disabled = false;
+      openBtn.textContent = 'Open';
+      updateFooter();
+    }
+  });
+
+  document.getElementById('cancelBtn').addEventListener('click', () => {
+    clearPreview();
+    filenameInput.value = '';
+    render();
+  });
+
+  render();
+</script>
+
+</body>
+</html>
