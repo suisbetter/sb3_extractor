@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import zipfile as zp
+import html
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
@@ -25,9 +26,10 @@ ASSET_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
 
 # Opens the dialog window and stores the selected file path
 def extract_sb3():
+    """Select, validate, extract, and convert a Scratch .sb3/.zip project."""
     file_path = filedialog.askopenfilename(
         title="Select Scratch Project",
-        initialdir=".",  # Starts in the current directory
+        initialdir=".",
         filetypes=[
             ("Scratch 3 Project / Zip", "*.sb3 *.zip"),
             ("Scratch Project (*.sb3)", "*.sb3"),
@@ -36,62 +38,133 @@ def extract_sb3():
         ],
     )
 
-    # Print the resulting file path if a file was chosen
-    if file_path:
-        print(f"Selected file: {file_path}")
-    else:
+    # The user cancelled; do not treat that as an error.
+    if not file_path:
         print("User cancelled the dialog.")
         return
 
-    # Create extraction folder based on the file name
-    base_name = os.path.splitext(os.path.basename(file_path))[0]
-    output_dir = os.path.join(os.path.dirname(file_path), f"{base_name}_extracted")
+    print(f"Selected file: {file_path}")
 
-    sb3_dir = os.path.join(output_dir, "sb3")
-    sound_dir = os.path.join(output_dir, "sound")
-    assets_dir = os.path.join(output_dir, "assets")
+    output_dir = None
+    created_files = []
 
     try:
-        os.makedirs(sb3_dir, exist_ok=True)
-        os.makedirs(sound_dir, exist_ok=True)
-        os.makedirs(assets_dir, exist_ok=True)
+        # Validate that the selected path is a regular file.
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError("The selected file does not exist or is not a regular file.")
+
+        # Make sure the file is readable before doing any work.
+        if not os.access(file_path, os.R_OK):
+            raise PermissionError("The selected file cannot be read. Check its permissions.")
+
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        safe_title = html.escape(base_name, quote=True)
+
+        output_dir = os.path.join(
+            os.path.dirname(file_path),
+            f"{base_name}_extracted"
+        )
+
+        sb3_dir = os.path.join(output_dir, "sb3")
+        sound_dir = os.path.join(output_dir, "sound")
+        assets_dir = os.path.join(output_dir, "assets")
+
+        # Create output directories.
+        for directory in (output_dir, sb3_dir, sound_dir, assets_dir):
+            os.makedirs(directory, exist_ok=True)
 
         counts = {"sb3": 0, "sound": 0, "assets": 0}
+        errors = []
+        project_json_found = False
 
-        # Extract archive contents into categorized folders
-        with zp.ZipFile(file_path, "r") as zip_ref:
-            for member in zip_ref.infolist():
-                if member.is_dir():
-                    continue
+        # Open and validate the archive.
+        try:
+            with zp.ZipFile(file_path, "r") as zip_ref:
+                bad_member = zip_ref.testzip()
+                if bad_member is not None:
+                    raise zp.BadZipFile(
+                        f"The archive contains a corrupted file: {bad_member}"
+                    )
 
-                filename = os.path.basename(member.filename)
-                ext = os.path.splitext(filename)[1].lower()
+                for member in zip_ref.infolist():
+                    if member.is_dir():
+                        continue
 
-                # Clean this up by moving JSON to sb3, audio to sound, and visual files to assets
-                if filename.lower() == "project.json" or ext == ".json":
-                    target_folder = sb3_dir
-                    counts["sb3"] += 1
-                elif ext in SOUND_EXTENSIONS:
-                    target_folder = sound_dir
-                    counts["sound"] += 1
-                else:
-                    target_folder = assets_dir
-                    counts["assets"] += 1
+                    # Ignore unsafe/invalid archive paths and only use the filename.
+                    filename = os.path.basename(member.filename)
+                    if not filename:
+                        errors.append(f"Skipped invalid archive entry: {member.filename}")
+                        continue
 
-                target_path = os.path.join(target_folder, filename)
-                with zip_ref.open(member) as source, open(target_path, "wb") as dest:
-                    dest.write(source.read())
+                    ext = os.path.splitext(filename)[1].lower()
 
-        # Generate self-contained executable HTML player
-        with open(file_path, "rb") as f:
-            project_base64 = base64.b64encode(f.read()).decode("ascii")
+                    if filename.lower() == "project.json":
+                        target_folder = sb3_dir
+                        counts["sb3"] += 1
+                        project_json_found = True
+                    elif ext == ".json":
+                        target_folder = sb3_dir
+                        counts["sb3"] += 1
+                    elif ext in SOUND_EXTENSIONS:
+                        target_folder = sound_dir
+                        counts["sound"] += 1
+                    else:
+                        target_folder = assets_dir
+                        counts["assets"] += 1
 
+                    # Avoid overwriting files when an archive contains duplicate
+                    # basenames from different directories.
+                    target_path = os.path.join(target_folder, filename)
+                    if os.path.exists(target_path):
+                        stem, extension = os.path.splitext(filename)
+                        number = 2
+                        while os.path.exists(
+                            os.path.join(target_folder, f"{stem}_{number}{extension}")
+                        ):
+                            number += 1
+                        target_path = os.path.join(
+                            target_folder, f"{stem}_{number}{extension}"
+                        )
+
+                    try:
+                        with zip_ref.open(member) as source, open(target_path, "wb") as dest:
+                            while True:
+                                chunk = source.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                dest.write(chunk)
+
+                        created_files.append(target_path)
+
+                    except (OSError, RuntimeError, zp.BadZipFile) as member_error:
+                        errors.append(
+                            f"Could not extract '{member.filename}': {member_error}"
+                        )
+
+        except zp.BadZipFile as archive_error:
+            raise zp.BadZipFile(str(archive_error))
+
+        # A Scratch project should contain project.json.
+        if not project_json_found:
+            raise ValueError(
+                "This archive does not contain project.json, so it does not "
+                "appear to be a valid Scratch project."
+            )
+
+        # Read the original archive and encode it for the HTML player.
+        try:
+            with open(file_path, "rb") as f:
+                project_base64 = base64.b64encode(f.read()).decode("ascii")
+        except OSError as read_error:
+            raise OSError(f"Could not read the Scratch project: {read_error}")
+
+        # Generate self-contained executable HTML player.
         executable_html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{base_name}</title>
+    <title>{safe_title}</title>
     <style>
         * {{
             box-sizing: border-box;
@@ -189,6 +262,7 @@ def extract_sb3():
             background: #1f2937;
             z-index: 10;
             font-size: 16px;
+            text-align: center;
         }}
         .spinner {{
             width: 40px;
@@ -208,14 +282,14 @@ def extract_sb3():
 </head>
 <body>
     <div id="header">
-        <div id="title">{base_name}</div>
+        <div id="title">{safe_title}</div>
         <div id="controls">
             <button id="greenflag" class="btn btn-green" title="Start">▶ Start</button>
             <button id="stop" class="btn btn-stop" title="Stop">⏹ Stop</button>
             <button id="fullscreen" class="btn btn-fullscreen" title="Fullscreen">⛶ Fullscreen</button>
         </div>
     </div>
-    
+
     <div id="player-wrapper">
         <div id="loading">
             <div class="spinner"></div>
@@ -227,11 +301,50 @@ def extract_sb3():
     <script>
         const projectBase64 = "{project_base64}";
 
+        function showPlayerError(message) {{
+            const loading = document.getElementById("loading");
+            if (!loading) return;
+
+            loading.innerHTML = "";
+            const errorTitle = document.createElement("div");
+            errorTitle.textContent = "Failed to load project";
+            errorTitle.style.color = "#ef4444";
+            errorTitle.style.fontWeight = "600";
+            errorTitle.style.marginBottom = "8px";
+
+            const errorText = document.createElement("div");
+            errorText.textContent = message || "An unknown error occurred.";
+            errorText.style.color = "#f9fafb";
+            errorText.style.padding = "0 20px";
+
+            loading.appendChild(errorTitle);
+            loading.appendChild(errorText);
+        }}
+
         async function initPlayer() {{
             try {{
-                const binary = atob(projectBase64);
+                if (typeof Scaffolding === "undefined" ||
+                    typeof Scaffolding.Scaffolding !== "function") {{
+                    throw new Error(
+                        "The TurboWarp player engine could not be loaded. " +
+                        "Check your internet connection and try again."
+                    );
+                }}
+
+                if (!projectBase64) {{
+                    throw new Error("The embedded Scratch project is empty.");
+                }}
+
+                let binary;
+                try {{
+                    binary = atob(projectBase64);
+                }} catch (decodeError) {{
+                    throw new Error("The embedded project data is corrupted.");
+                }}
+
                 const len = binary.length;
                 const bytes = new Uint8Array(len);
+
                 for (let i = 0; i < len; i++) {{
                     bytes[i] = binary.charCodeAt(i);
                 }}
@@ -243,54 +356,145 @@ def extract_sb3():
                 scaffolding.setup();
 
                 const container = document.getElementById("player-container");
+                if (!container) {{
+                    throw new Error("The player container could not be found.");
+                }}
+
                 scaffolding.appendTo(container);
 
                 await scaffolding.loadProject(bytes.buffer);
 
-                document.getElementById("loading").style.display = "none";
+                const loading = document.getElementById("loading");
+                if (loading) {{
+                    loading.style.display = "none";
+                }}
+
                 scaffolding.greenFlag();
 
-                document.getElementById("greenflag").onclick = () => scaffolding.greenFlag();
-                document.getElementById("stop").onclick = () => scaffolding.stopAll();
-                document.getElementById("fullscreen").onclick = () => {{
-                    const wrapper = document.getElementById("player-wrapper");
-                    if (!document.fullscreenElement) {{
-                        wrapper.requestFullscreen().catch(err => console.error(err));
-                    }} else {{
-                        document.exitFullscreen();
+                document.getElementById("greenflag").onclick = () => {{
+                    try {{
+                        scaffolding.greenFlag();
+                    }} catch (error) {{
+                        console.error("Green flag error:", error);
+                        showPlayerError("Could not start the project: " + error.message);
                     }}
                 }};
-            }} catch (err) {{
-                document.getElementById("loading").innerHTML = '<div style="color:#ef4444;padding:20px;text-align:center;">Failed to load project: ' + err.message + '</div>';
+
+                document.getElementById("stop").onclick = () => {{
+                    try {{
+                        scaffolding.stopAll();
+                    }} catch (error) {{
+                        console.error("Stop error:", error);
+                        showPlayerError("Could not stop the project: " + error.message);
+                    }}
+                }};
+
+                document.getElementById("fullscreen").onclick = async () => {{
+                    try {{
+                        const wrapper = document.getElementById("player-wrapper");
+
+                        if (!document.fullscreenElement) {{
+                            if (!wrapper.requestFullscreen) {{
+                                throw new Error("Fullscreen is not supported by this browser.");
+                            }}
+                            await wrapper.requestFullscreen();
+                        }} else {{
+                            await document.exitFullscreen();
+                        }}
+                    }} catch (error) {{
+                        console.error("Fullscreen error:", error);
+                        showPlayerError("Fullscreen failed: " + error.message);
+                    }}
+                }};
+            }} catch (error) {{
+                console.error("Player initialization error:", error);
+                showPlayerError(
+                    error && error.message
+                        ? error.message
+                        : "An unknown error occurred."
+                );
             }}
         }}
+
+        window.addEventListener("error", (event) => {{
+            console.error("Page error:", event.error || event.message);
+        }});
+
+        window.addEventListener("unhandledrejection", (event) => {{
+            console.error("Unhandled promise rejection:", event.reason);
+        }});
 
         window.addEventListener("DOMContentLoaded", initPlayer);
     </script>
 </body>
 </html>"""
 
-        # Save executable HTML player in the extracted directory
+        # Save the generated HTML player.
         html_player_path = os.path.join(output_dir, f"{base_name}.html")
-        with open(html_player_path, "w", encoding="utf-8") as f:
-            f.write(executable_html)
+        try:
+            with open(html_player_path, "w", encoding="utf-8") as f:
+                f.write(executable_html)
+            created_files.append(html_player_path)
+        except OSError as write_error:
+            raise OSError(f"Could not create the HTML player: {write_error}")
 
-        # Success message box with extraction summary
-        messagebox.showinfo(
-            "Success",
+        summary = (
             f"Extraction complete!\n\n"
             f"• Output folder: {output_dir}\n"
             f"• Executable HTML: {base_name}.html\n"
             f"• Project JSON (sb3/): {counts['sb3']} file(s)\n"
             f"• Sound files (sound/): {counts['sound']} file(s)\n"
-            f"• Assets (assets/): {counts['assets']} file(s)",
+            f"• Assets (assets/): {counts['assets']} file(s)"
         )
-    except zp.BadZipFile:
-        messagebox.showerror("Error", "The selected file is not a valid zip/sb3 archive.")
+
+        if errors:
+            summary += (
+                f"\n\n⚠ {len(errors)} file(s) could not be extracted."
+                f"\nThe HTML player was still created."
+            )
+            print("\n".join(errors))
+
+        messagebox.showinfo("Success", summary)
+
+    except zp.BadZipFile as e:
+        messagebox.showerror(
+            "Invalid Scratch Project",
+            f"The selected file is not a valid or complete ZIP/SB3 archive.\n\nDetails: {e}"
+        )
+
+    except PermissionError as e:
+        messagebox.showerror(
+            "Permission Error",
+            f"Windows denied access to the selected file or output folder.\n\nDetails: {e}"
+        )
+
+    except FileNotFoundError as e:
+        messagebox.showerror(
+            "File Not Found",
+            f"The selected file could not be found.\n\nDetails: {e}"
+        )
+
+    except ValueError as e:
+        messagebox.showerror(
+            "Invalid Scratch Project",
+            str(e)
+        )
+
+    except OSError as e:
+        messagebox.showerror(
+            "File System Error",
+            f"A file system operation failed.\n\nDetails: {e}"
+        )
+
     except Exception as e:
-        messagebox.showerror("Error", f"Failed to extract file: {e}")
-    finally:
-        root.destroy()
+        # Catch unexpected errors so the GUI does not silently crash.
+        print("Unexpected error:", repr(e))
+        messagebox.showerror(
+            "Unexpected Error",
+            f"Something unexpected went wrong.\n\n"
+            f"{type(e).__name__}: {e}\n\n"
+            f"Check the terminal/console for more details."
+        )
 
 
 # Set up the main application window
