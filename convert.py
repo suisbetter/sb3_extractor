@@ -589,5 +589,5 @@ def on_btn_leave(e):
 
 btn.bind("<Enter>", on_btn_enter)
 btn.bind("<Leave>", on_btn_leave)
-
+root.destroy()
 root.mainloop()
