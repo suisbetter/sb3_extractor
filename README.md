@@ -9,7 +9,7 @@ standalone HTML player.  Works on **Windows**, **macOS**, **Linux**, and
 ## Features
 
 -  Drag-and-drop `.sb3` / `.zip` project support
-- 🗂Organises assets into `sb3/`, `sound/`, and `assets/` folders
+-  Organizes assets into `sb3/`, `sound/`, and `assets/` folders
 -  Generates a self-contained HTML file that plays the project offline
 
 
