@@ -4,10 +4,30 @@ __pycache__/
 
 # Extracted output directories
 *_extracted/
-*.zip
 
 # OS & Editor files
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+
+# PyInstaller
+dist/
+build/
+*.spec.bak
+
+# Electron build output
+dist-electron/
+node_modules/
+
+# Python packaging
+*.egg-info/
+*.egg
+.eggs/
+sdist/
+wheels/
+*.whl
+
+# Zip archives (generated output only — electron-package.json is kept)
+*.zip
+!electron-package.json

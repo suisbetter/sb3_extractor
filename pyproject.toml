@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "sb3-converter"
+version = "1.0.0"
+description = "Extract Scratch 3 (.sb3) projects into organised folders and generate a standalone HTML player."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+keywords = ["scratch", "sb3", "converter", "extractor"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: X11 Applications",
+    "Environment :: MacOS X",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Utilities",
+]
+# tkinter ships with the standard library – no pip dep needed.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pyinstaller>=6.0", "build", "twine"]
+
+[project.scripts]
+# GUI launcher (opens file-picker dialog or falls back to CLI)
+sb3-converter = "sb3_converter.cli:main"
+# Headless / CLI alias
+sb3 = "sb3_converter.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/suisbetter/sb3_extractor"
+"Bug Tracker" = "https://github.com/suisbetter/sb3_extractor/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sb3_converter*"]
+
+[tool.setuptools.package-data]
+"sb3_converter" = ["assets/*"]

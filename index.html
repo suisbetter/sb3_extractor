@@ -315,8 +315,15 @@
 <input type="file" id="realFileInput" accept=".sb3,.zip">
 
 <script>
+  // ── Electron integration ─────────────────────────────────────────────────
+  // window.electronAPI is injected by preload.js when running inside Electron.
+  // When opening in a browser, it is undefined and all paths fall back to the
+  // standard <input type="file"> / Blob download approach.
+  const isElectron = !!(window.electronAPI && window.electronAPI.isElectron);
+
   let loadedZip = null;
   let loadedProject = null;
+  let loadedBuffer = null;   // raw ArrayBuffer of the original file (Electron)
   let assetUrls = {};
 
   const statusText = document.getElementById('statusText');
@@ -328,12 +335,30 @@
   const cancelBtn = document.getElementById('cancelBtn');
   const realFileInput = document.getElementById('realFileInput');
 
-  browseBtn.addEventListener('click', () => realFileInput.click());
-  dropzone.addEventListener('click', () => realFileInput.click());
+  // ── File-open: native dialog (Electron) or <input> (browser) ────────────
+  async function openNativeDialog() {
+    const result = await window.electronAPI.openFileDialog();
+    if (result.canceled) return;
+    if (result.error) { alert('Could not open file: ' + result.error); return; }
+    // Wrap in a File-like object so loadFile() works unchanged
+    const blob = new Blob([result.buffer]);
+    const file = new File([blob], result.name);
+    loadedBuffer = result.buffer;
+    loadFile(file);
+  }
+
+  browseBtn.addEventListener('click', () => {
+    if (isElectron) openNativeDialog();
+    else realFileInput.click();
+  });
+  dropzone.addEventListener('click', () => {
+    if (isElectron) openNativeDialog();
+    else realFileInput.click();
+  });
 
   realFileInput.addEventListener('change', e => {
     const file = e.target.files[0];
-    if (file) loadFile(file);
+    if (file) { loadedBuffer = null; loadFile(file); }
   });
 
   // Drag & drop handlers
@@ -343,7 +368,7 @@
     e.preventDefault();
     dropzone.classList.remove('drag');
     const file = e.dataTransfer.files[0];
-    if (file) loadFile(file);
+    if (file) { loadedBuffer = null; loadFile(file); }
   });
 
   async function loadFile(file){
@@ -664,16 +689,28 @@
         }
       }
 
-      // Generate downloadable zip bundle
+      // ── Save: native dialog (Electron) or Blob download (browser) ─────────
       const outBlob = await newZip.generateAsync({ type: 'blob' });
-      const downloadUrl = URL.createObjectURL(outBlob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `${baseName}_extracted.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(downloadUrl);
+      const suggestedName = `${baseName}_extracted.zip`;
+
+      if (isElectron) {
+        // Use native "Save As" dialog
+        const outArrayBuffer = await outBlob.arrayBuffer();
+        const saveResult = await window.electronAPI.saveFile(suggestedName, outArrayBuffer);
+        if (!saveResult.success && saveResult.reason !== 'canceled') {
+          alert('Could not save file: ' + saveResult.reason);
+        }
+      } else {
+        // Browser: trigger download via invisible <a>
+        const downloadUrl = URL.createObjectURL(outBlob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = suggestedName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(downloadUrl);
+      }
 
       // Option to launch player directly
       const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
@@ -681,7 +718,7 @@
 
       const playNow = confirm(
         `Extraction Complete!\n\n` +
-        `• Downloaded: ${baseName}_extracted.zip\n` +
+        `• Saved: ${suggestedName}\n` +
         `• Project JSON (sb3/): ${counts.sb3} file(s)\n` +
         `• Executable HTML (sb3/): ${baseName}.html\n` +
         `• Sound files (sound/): ${counts.sound} file(s)\n` +

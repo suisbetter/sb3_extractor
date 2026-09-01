@@ -1,0 +1,143 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create a GitHub Release
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Python (PyInstaller) builds – one job per platform
+  # ──────────────────────────────────────────────────────────────────────────
+  pyinstaller:
+    name: PyInstaller (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: SB3Converter.exe
+            asset_name: SB3Converter-windows.exe
+          - os: macos-latest
+            artifact: dist/SB3Converter.app
+            asset_name: SB3Converter-macos.zip
+          - os: ubuntu-latest
+            artifact: dist/SB3Converter
+            asset_name: SB3Converter-linux
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      # Linux: install tkinter and a virtual display
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y python3-tk xvfb
+
+      - name: Build executable
+        run: pyinstaller sb3_converter.spec
+
+      # macOS: zip the .app bundle so it can be uploaded as a single file
+      - name: Zip macOS app bundle
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          zip -r SB3Converter-macos.zip SB3Converter.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: |
+            ${{ runner.os == 'Windows' && 'dist/SB3Converter.exe' || '' }}
+            ${{ runner.os == 'macOS'   && 'dist/SB3Converter-macos.zip' || '' }}
+            ${{ runner.os == 'Linux'   && 'dist/SB3Converter' || '' }}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Electron builds – cross-platform on the native runner for each OS
+  # ──────────────────────────────────────────────────────────────────────────
+  electron:
+    name: Electron (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: electron-package.json
+
+      # Install from the electron-package.json (not the root package.json)
+      - name: Install Electron dependencies
+        run: |
+          cp electron-package.json package.json
+          npm install
+
+      - name: Build Electron app
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Electron artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-${{ matrix.os }}
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.dmg
+            dist-electron/*.AppImage
+            dist-electron/*.deb
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. Create GitHub Release (only on tag push)
+  # ──────────────────────────────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: [pyinstaller, electron]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.zip
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.deb
+            release-artifacts/**/SB3Converter-linux
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
