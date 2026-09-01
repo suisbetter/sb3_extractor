@@ -2,20 +2,16 @@
 
 A lightweight, open-source tool to extract Scratch 3 projects and generate a
 standalone HTML player.  Works on **Windows**, **macOS**, **Linux**, and
-**Google Colab** — no Scratch account required.
+**Google Colab**.
 
 ---
 
 ## Features
 
-- 📦 Drag-and-drop `.sb3` / `.zip` project support
-- 🗂 Organises assets into `sb3/`, `sound/`, and `assets/` folders
-- 🌐 Generates a self-contained HTML file that plays the project offline
-- 🖥 Native desktop app (Electron) — no Python or browser required
-- 🐍 pip-installable Python package with `sb3-converter` CLI command
-- ⚡ PyInstaller single-file executable for every platform
+-  Drag-and-drop `.sb3` / `.zip` project support
+- 🗂Organises assets into `sb3/`, `sound/`, and `assets/` folders
+-  Generates a self-contained HTML file that plays the project offline
 
----
 
 ## Project Structure
 
