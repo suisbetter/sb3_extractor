@@ -1,48 +1,79 @@
 # Imports
 import base64
-import ctypes
+import html
 import json
 import os
-import subprocess
+import platform
 import sys
 import zipfile as zp
-import html
-import tkinter as tk
-from tkinter import filedialog, messagebox
 
 # Enable High-DPI awareness on Windows for crisp rendering
-try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(1)
-except Exception:
+if platform.system() == "Windows":
     try:
-        ctypes.windll.user32.SetProcessDPIAware()
+        import ctypes
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except Exception:
-        pass
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+# Detect whether a GUI (tkinter) is available (not available in Colab/headless)
+GUI_AVAILABLE = False
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox
+    _test_root = tk.Tk()
+    _test_root.withdraw()
+    _test_root.destroy()
+    GUI_AVAILABLE = True
+except Exception:
+    pass
 
 # Available asset and sound extensions that can be extracted from the .sb3 file
 SOUND_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".wma"}
 ASSET_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
 
+# Cross-platform system font fallback
+_SYSTEM = platform.system()
+if _SYSTEM == "Darwin":   # macOS
+    UI_FONT = "SF Pro Display"
+elif _SYSTEM == "Windows":
+    UI_FONT = "Segoe UI"
+else:                     # Linux / Colab / other
+    UI_FONT = "DejaVu Sans"
 
-# Opens the dialog window and stores the selected file path
-def extract_sb3():
-    """Select, validate, extract, and convert a Scratch .sb3/.zip project."""
-    file_path = filedialog.askopenfilename(
-        title="Select Scratch Project",
-        initialdir=".",
-        filetypes=[
-            ("Scratch 3 Project / Zip", "*.sb3 *.zip"),
-            ("Scratch Project (*.sb3)", "*.sb3"),
-            ("Zip Archive (*.zip)", "*.zip"),
-            ("All Files", "*.*"),
-        ],
-    )
 
-    # The user cancelled; do not treat that as an error.
-    if not file_path:
-        print("User cancelled the dialog.")
-        return
+# ──────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────────────────────────────────────
 
+def _show_error(title, message):
+    """Display an error via messagebox (GUI) or stderr (headless)."""
+    if GUI_AVAILABLE:
+        messagebox.showerror(title, message)
+    else:
+        print(f"[ERROR] {title}: {message}", file=sys.stderr)
+
+
+def _show_info(title, message):
+    """Display information via messagebox (GUI) or stdout (headless)."""
+    if GUI_AVAILABLE:
+        messagebox.showinfo(title, message)
+    else:
+        print(f"[{title}] {message}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Core conversion logic
+# ──────────────────────────────────────────────────────────────────────────────
+
+def convert_sb3(file_path):
+    """Validate, extract, and convert a Scratch .sb3/.zip project.
+
+    Works in both GUI and headless (Colab / CLI) environments.
+    Returns the output directory path on success; raises an exception on failure.
+    """
     print(f"Selected file: {file_path}")
 
     output_dir = None
@@ -284,9 +315,9 @@ def extract_sb3():
     <div id="header">
         <div id="title">{safe_title}</div>
         <div id="controls">
-            <button id="greenflag" class="btn btn-green" title="Start">▶ Start</button>
-            <button id="stop" class="btn btn-stop" title="Stop">⏹ Stop</button>
-            <button id="fullscreen" class="btn btn-fullscreen" title="Fullscreen">⛶ Fullscreen</button>
+            <button id="greenflag" class="btn btn-green" title="Start">&#9654; Start</button>
+            <button id="stop" class="btn btn-stop" title="Stop">&#9209; Stop</button>
+            <button id="fullscreen" class="btn btn-fullscreen" title="Fullscreen">&#x26F6; Fullscreen</button>
         </div>
     </div>
 
@@ -440,154 +471,209 @@ def extract_sb3():
 
         summary = (
             f"Extraction complete!\n\n"
-            f"• Output folder: {output_dir}\n"
-            f"• Executable HTML: {base_name}.html\n"
-            f"• Project JSON (sb3/): {counts['sb3']} file(s)\n"
-            f"• Sound files (sound/): {counts['sound']} file(s)\n"
-            f"• Assets (assets/): {counts['assets']} file(s)"
+            f"\u2022 Output folder: {output_dir}\n"
+            f"\u2022 Executable HTML: {base_name}.html\n"
+            f"\u2022 Project JSON (sb3/): {counts['sb3']} file(s)\n"
+            f"\u2022 Sound files (sound/): {counts['sound']} file(s)\n"
+            f"\u2022 Assets (assets/): {counts['assets']} file(s)"
         )
 
         if errors:
             summary += (
-                f"\n\n⚠ {len(errors)} file(s) could not be extracted."
+                f"\n\n\u26a0 {len(errors)} file(s) could not be extracted."
                 f"\nThe HTML player was still created."
             )
             print("\n".join(errors))
 
-        messagebox.showinfo("Success", summary)
+        _show_info("Success", summary)
+        return output_dir
 
     except zp.BadZipFile as e:
-        messagebox.showerror(
+        _show_error(
             "Invalid Scratch Project",
             f"The selected file is not a valid or complete ZIP/SB3 archive.\n\nDetails: {e}"
         )
+        raise
 
     except PermissionError as e:
-        messagebox.showerror(
+        _show_error(
             "Permission Error",
-            f"Windows denied access to the selected file or output folder.\n\nDetails: {e}"
+            f"Access to the selected file or output folder was denied.\n\nDetails: {e}"
         )
+        raise
 
     except FileNotFoundError as e:
-        messagebox.showerror(
+        _show_error(
             "File Not Found",
             f"The selected file could not be found.\n\nDetails: {e}"
         )
+        raise
 
     except ValueError as e:
-        messagebox.showerror(
-            "Invalid Scratch Project",
-            str(e)
-        )
+        _show_error("Invalid Scratch Project", str(e))
+        raise
 
     except OSError as e:
-        messagebox.showerror(
+        _show_error(
             "File System Error",
             f"A file system operation failed.\n\nDetails: {e}"
         )
+        raise
 
     except Exception as e:
-        # Catch unexpected errors so the GUI does not silently crash.
+        # Catch unexpected errors so the app does not silently crash.
         print("Unexpected error:", repr(e))
-        messagebox.showerror(
+        _show_error(
             "Unexpected Error",
             f"Something unexpected went wrong.\n\n"
             f"{type(e).__name__}: {e}\n\n"
             f"Check the terminal/console for more details."
         )
+        raise
 
 
-# Set up the main application window
-root = tk.Tk()
-root.title("SB3 Converter & Extractor")
-root.geometry("480x320")
-root.resizable(False, False)
-root.configure(bg="#1e1e2e")
+# ──────────────────────────────────────────────────────────────────────────────
+# Entry points
+# ──────────────────────────────────────────────────────────────────────────────
 
-# Center the window on screen
-root.update_idletasks()
-win_w = 480
-win_h = 320
-pos_x = (root.winfo_screenwidth() // 2) - (win_w // 2)
-pos_y = (root.winfo_screenheight() // 2) - (win_h // 2)
-root.geometry(f"{win_w}x{win_h}+{pos_x}+{pos_y}")
+def extract_sb3():
+    """GUI callback: open file dialog then call convert_sb3."""
+    file_path = filedialog.askopenfilename(
+        title="Select Scratch Project",
+        initialdir=".",
+        filetypes=[
+            ("Scratch 3 Project / Zip", "*.sb3 *.zip"),
+            ("Scratch Project (*.sb3)", "*.sb3"),
+            ("Zip Archive (*.zip)", "*.zip"),
+            ("All Files", "*.*"),
+        ],
+    )
 
-# Outer card container
-card = tk.Frame(root, bg="#252538", bd=0, highlightbackground="#363a4f", highlightthickness=1)
-card.pack(fill="both", expand=True, padx=18, pady=18)
+    # The user cancelled; do not treat that as an error.
+    if not file_path:
+        print("User cancelled the dialog.")
+        return
 
-# Header Section
-header_frame = tk.Frame(card, bg="#252538")
-header_frame.pack(fill="x", padx=20, pady=(18, 8))
-
-title_label = tk.Label(
-    header_frame,
-    text="SB3 Project Converter",
-    font=("Segoe UI", 15, "bold"),
-    fg="#ffffff",
-    bg="#252538",
-)
-title_label.pack(anchor="w")
-
-subtitle_label = tk.Label(
-    header_frame,
-    text="Extract assets, organize project data & generate standalone HTML",
-    font=("Segoe UI", 9),
-    fg="#a6adc8",
-    bg="#252538",
-)
-subtitle_label.pack(anchor="w", pady=(2, 0))
-
-# Action Area / Card
-action_frame = tk.Frame(card, bg="#1e1e2e", bd=0, highlightbackground="#45475a", highlightthickness=1)
-action_frame.pack(fill="both", expand=True, padx=20, pady=10)
-
-icon_label = tk.Label(
-    action_frame,
-    text="📦",
-    font=("Segoe UI Emoji", 22),
-    bg="#1e1e2e",
-    fg="#ff8c1a",
-)
-icon_label.pack(pady=(10, 2))
-
-info_label = tk.Label(
-    action_frame,
-    text="Select a Scratch 3 project (.sb3) file to begin",
-    font=("Segoe UI", 9),
-    fg="#bac2de",
-    bg="#1e1e2e",
-)
-info_label.pack(pady=(0, 10))
-
-# Create a button to trigger the dialog
-btn = tk.Button(
-    action_frame,
-    text="  Browse & Convert .sb3  ",
-    command=extract_sb3,
-    font=("Segoe UI", 10, "bold"),
-    bg="#ff8c1a",
-    fg="#ffffff",
-    activebackground="#e67705",
-    activeforeground="#ffffff",
-    relief="flat",
-    cursor="hand2",
-    padx=16,
-    pady=6,
-    bd=0,
-)
-btn.pack(pady=(0, 12))
+    try:
+        convert_sb3(file_path)
+    except Exception:
+        pass  # convert_sb3 already displayed the error to the user
 
 
-def on_btn_enter(e):
-    btn.config(bg="#ffa03b")
+def _run_headless():
+    """CLI / Colab entry point: accept a file path from argv or prompt."""
+    if len(sys.argv) > 1:
+        file_path = sys.argv[1]
+    else:
+        file_path = input("Enter the path to your .sb3 file: ").strip()
+
+    if not file_path:
+        print("No file path provided. Exiting.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        out = convert_sb3(file_path)
+        print(f"\nDone! Output folder: {out}")
+    except Exception:
+        sys.exit(1)
 
 
-def on_btn_leave(e):
-    btn.config(bg="#ff8c1a")
+# ──────────────────────────────────────────────────────────────────────────────
+# Main – launch GUI if available, otherwise fall back to CLI
+# ──────────────────────────────────────────────────────────────────────────────
 
+if __name__ == "__main__":
+    if GUI_AVAILABLE:
+        # Set up the main application window
+        root = tk.Tk()
+        root.title("SB3 Converter & Extractor")
+        root.geometry("480x320")
+        root.resizable(False, False)
+        root.configure(bg="#1e1e2e")
 
-btn.bind("<Enter>", on_btn_enter)
-btn.bind("<Leave>", on_btn_leave)
-root.destroy()
-root.mainloop()
+        # Center the window on screen
+        root.update_idletasks()
+        win_w = 480
+        win_h = 320
+        pos_x = (root.winfo_screenwidth() // 2) - (win_w // 2)
+        pos_y = (root.winfo_screenheight() // 2) - (win_h // 2)
+        root.geometry(f"{win_w}x{win_h}+{pos_x}+{pos_y}")
+
+        # Outer card container
+        card = tk.Frame(root, bg="#252538", bd=0, highlightbackground="#363a4f", highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=18, pady=18)
+
+        # Header Section
+        header_frame = tk.Frame(card, bg="#252538")
+        header_frame.pack(fill="x", padx=20, pady=(18, 8))
+
+        title_label = tk.Label(
+            header_frame,
+            text="SB3 Project Converter",
+            font=(UI_FONT, 15, "bold"),
+            fg="#ffffff",
+            bg="#252538",
+        )
+        title_label.pack(anchor="w")
+
+        subtitle_label = tk.Label(
+            header_frame,
+            text="Extract assets, organize project data & generate standalone HTML",
+            font=(UI_FONT, 9),
+            fg="#a6adc8",
+            bg="#252538",
+        )
+        subtitle_label.pack(anchor="w", pady=(2, 0))
+
+        # Action Area / Card
+        action_frame = tk.Frame(card, bg="#1e1e2e", bd=0, highlightbackground="#45475a", highlightthickness=1)
+        action_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        icon_label = tk.Label(
+            action_frame,
+            text="\U0001f4e6",
+            font=(UI_FONT, 22),
+            bg="#1e1e2e",
+            fg="#ff8c1a",
+        )
+        icon_label.pack(pady=(10, 2))
+
+        info_label = tk.Label(
+            action_frame,
+            text="Select a Scratch 3 project (.sb3) file to begin",
+            font=(UI_FONT, 9),
+            fg="#bac2de",
+            bg="#1e1e2e",
+        )
+        info_label.pack(pady=(0, 10))
+
+        # Create a button to trigger the dialog
+        btn = tk.Button(
+            action_frame,
+            text="  Browse & Convert .sb3  ",
+            command=extract_sb3,
+            font=(UI_FONT, 10, "bold"),
+            bg="#ff8c1a",
+            fg="#ffffff",
+            activebackground="#e67705",
+            activeforeground="#ffffff",
+            relief="flat",
+            cursor="hand2",
+            padx=16,
+            pady=6,
+            bd=0,
+        )
+        btn.pack(pady=(0, 12))
+
+        def on_btn_enter(e):
+            btn.config(bg="#ffa03b")
+
+        def on_btn_leave(e):
+            btn.config(bg="#ff8c1a")
+
+        btn.bind("<Enter>", on_btn_enter)
+        btn.bind("<Leave>", on_btn_leave)
+
+        root.mainloop()
+    else:
+        _run_headless()
