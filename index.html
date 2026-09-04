@@ -627,7 +627,14 @@
                     }
                 };
             } catch (err) {
-                document.getElementById("loading").innerHTML = '<div style="color:#ef4444;padding:20px;text-align:center;">Failed to load project: ' + err.message + '</div>';
+                const loadingEl = document.getElementById("loading");
+                if (loadingEl) {
+                    loadingEl.innerHTML = "";
+                    const msg = document.createElement("div");
+                    msg.style.cssText = "color:#ef4444;padding:20px;text-align:center;";
+                    msg.textContent = "Failed to load project: " + (err && err.message ? err.message : String(err));
+                    loadingEl.appendChild(msg);
+                }
             }
         }
 

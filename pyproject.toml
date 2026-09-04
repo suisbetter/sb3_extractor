@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "sb3-converter"
@@ -27,7 +27,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Utilities",
 ]
-# tkinter ships with the standard library – no pip dep needed.
+# No runtime dependencies — tkinter ships with the standard library.
+# (json2html was previously listed here but was never imported; removed.)
 dependencies = []
 
 [project.optional-dependencies]
@@ -48,4 +49,4 @@ where = ["."]
 include = ["sb3_converter*"]
 
 [tool.setuptools.package-data]
-"sb3_converter" = ["assets/*"]
+# No package data is currently shipped with the package.

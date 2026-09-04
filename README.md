@@ -10,7 +10,9 @@ standalone HTML player.  Works on **Windows**, **macOS**, **Linux**, and
 
 -  Drag-and-drop `.sb3` / `.zip` project support
 -  Organizes assets into `sb3/`, `sound/`, and `assets/` folders
--  Generates a self-contained HTML file that plays the project offline
+-  Generates a self-contained HTML file that plays the project (the Scratch
+   player engine is fetched from the TurboWarp CDN on first open, so an
+   internet connection is required the first time you run a generated file)
 
 
 ## Project Structure
@@ -117,13 +119,15 @@ Open [`index.html`](index.html) in any modern browser:
 
 When no display is available, the Python script automatically falls back to a
 command-line interface:
-
 ```bash
 # Pass the file path as an argument
 python convert.py /path/to/project.sb3
 
 # Or run without arguments and type the path when prompted
 python convert.py
+
+# Show a full traceback if something goes wrong (useful for debugging)
+python convert.py /path/to/project.sb3 --verbose
 ```
 
 **Google Colab example:**

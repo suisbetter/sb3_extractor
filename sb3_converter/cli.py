@@ -4,22 +4,46 @@ CLI entry point for the sb3-converter package.
 
 When invoked via the `sb3-converter` or `sb3` console_scripts entry point,
 this module decides whether to open the GUI (when tkinter + a display are
-available) or fall back to a headless CLI prompt / argv-based mode.
+available) or fall back to a headless CLI mode.
 """
+import argparse
 import sys
+import traceback
 
 from .core import convert_sb3, GUI_AVAILABLE
+
+__all__ = ["main"]
 
 
 def main(argv=None):
     """Main entry point.  Accepts an optional argv list for testability."""
-    if argv is not None:
-        sys.argv = ["sb3-converter"] + list(argv)
+    parser = argparse.ArgumentParser(
+        prog="sb3",
+        description="Extract a Scratch 3 (.sb3) project into organised folders "
+        "and generate a standalone HTML player.",
+    )
+    parser.add_argument(
+        "file",
+        nargs="?",
+        help="Path to the .sb3 (or .zip) file to convert. If omitted and a GUI "
+        "is available, a file picker opens; otherwise you are prompted.",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Print the full Python traceback on error (useful for debugging).",
+    )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Force the headless CLI mode even when tkinter is available.",
+    )
+    args = parser.parse_args(argv)
 
-    if GUI_AVAILABLE:
+    if GUI_AVAILABLE and not args.headless:
         _run_gui()
     else:
-        _run_headless()
+        _run_headless(file_path=args.file, verbose=args.verbose)
 
 
 def _run_gui():
@@ -53,7 +77,8 @@ def _run_gui():
         try:
             convert_sb3(file_path)
         except Exception:
-            pass  # convert_sb3 already displayed the error
+            # convert_sb3 already displayed the error to the user
+            pass
 
     root = tk.Tk()
     root.title("SB3 Converter & Extractor")
@@ -132,11 +157,12 @@ def _run_gui():
     root.mainloop()
 
 
-def _run_headless():
+def _run_headless(file_path=None, verbose=False):
     """Accept a file path from argv or prompt for one, then convert."""
-    if len(sys.argv) > 1:
-        file_path = sys.argv[1]
-    else:
+    if not file_path:
+        if not sys.stdin.isatty():
+            print("No file path provided and stdin is not a terminal. Exiting.", file=sys.stderr)
+            sys.exit(1)
         file_path = input("Enter the path to your .sb3 file: ").strip()
 
     if not file_path:
@@ -146,7 +172,13 @@ def _run_headless():
     try:
         out = convert_sb3(file_path)
         print(f"\nDone! Output folder: {out}")
+    except SystemExit:
+        raise
     except Exception:
+        if verbose:
+            traceback.print_exc()
+        # Non-verbose: a one-line error was already surfaced by convert_sb3
+        # (via stderr or a GUI messagebox); just exit non-zero here.
         sys.exit(1)
 
 

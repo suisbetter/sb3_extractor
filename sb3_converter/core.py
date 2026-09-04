@@ -7,7 +7,6 @@ This module is platform-agnostic and works in GUI and headless environments.
 
 import base64
 import html
-import json
 import os
 import platform
 import sys
@@ -28,7 +27,11 @@ if platform.system() == "Windows":
         except Exception:
             pass
 
-# Detect whether a GUI (tkinter) is available (not available in Colab/headless)
+# Detect whether a GUI (tkinter) is available (not available in Colab/headless).
+# We must actually attempt to create a Tk root here (not just import tkinter):
+# on systems where the tkinter module imports fine but no display/window
+# system is available (headless Linux, CI runners, some Colab setups), only
+# instantiating Tk() reveals that GUI usage is impossible.
 GUI_AVAILABLE = False
 try:
     import tkinter as tk
@@ -46,6 +49,12 @@ except Exception:
 
 SOUND_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".wma"}
 ASSET_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
+
+# Decompression-bomb guard: skip any single archive member whose declared
+# uncompressed size exceeds this many bytes. 512 MB is far above any
+# legitimate Scratch asset. Exposed as a module constant so it can be
+# overridden (e.g. in tests).
+MAX_MEMBER_SIZE = 512 * 1024 * 1024
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -130,6 +139,15 @@ def convert_sb3(file_path):
                     filename = os.path.basename(member.filename)
                     if not filename:
                         errors.append(f"Skipped invalid archive entry: {member.filename}")
+                        continue
+
+                    # Guard against decompression bombs: skip any single entry
+                    # whose uncompressed size is unreasonably large.
+                    if member.file_size > MAX_MEMBER_SIZE:
+                        errors.append(
+                            f"Skipped oversized entry '{member.filename}' "
+                            f"({member.file_size} bytes)"
+                        )
                         continue
 
                     ext = os.path.splitext(filename)[1].lower()
@@ -313,8 +331,32 @@ def convert_sb3(file_path):
             to {{ transform: rotate(360deg); }}
         }}
     </style>
-    <!-- TurboWarp Scaffolding player engine -->
-    <script src="https://packager.turbowarp.org/scaffolding/scaffolding-min.js"></script>
+    <!-- TurboWarp Scaffolding player engine (loaded from packager.turbowarp.org).
+         Requires an internet connection on first load; it is not bundled
+         inline in this file. -->
+    <script src="https://packager.turbowarp.org/scaffolding/scaffolding-min.js"
+            onerror="window.__scaffoldingFailed = true;"></script>
+    <script>
+        // If the external engine failed to load (e.g. no internet), surface a
+        // clear error instead of leaving the spinner spinning forever.
+        window.addEventListener("DOMContentLoaded", function () {{
+            if (window.__scaffoldingFailed) {{
+                var loading = document.getElementById("loading");
+                if (loading) {{
+                    loading.innerHTML = "";
+                    var t = document.createElement("div");
+                    t.textContent = "Could not load the Scratch player engine";
+                    t.style.cssText = "color:#ef4444;font-weight:600;margin-bottom:8px;";
+                    var d = document.createElement("div");
+                    d.textContent = "An internet connection is required on first load. " +
+                        "Please check your connection and refresh this page.";
+                    d.style.cssText = "color:#f9fafb;padding:0 20px;";
+                    loading.appendChild(t);
+                    loading.appendChild(d);
+                }}
+            }}
+        }});
+    </script>
 </head>
 <body>
     <div id="header">
