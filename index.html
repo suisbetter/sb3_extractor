@@ -660,14 +660,8 @@
       const baseName = filenameInput.value.replace(/\.sb3$/i, '').replace(/\.zip$/i, '') || 'ScratchProject';
       const soundExtensions = ['.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac', '.wma'];
 
-      // Get raw buffer of the sb3 file for executable HTML embedding
-      const sb3Buffer = await loadedZip.generateAsync({ type: 'arraybuffer' });
-      let binary = '';
-      const bytes = new Uint8Array(sb3Buffer);
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64Data = btoa(binary);
+      // Get base64 representation of the sb3 file for executable HTML embedding
+      const base64Data = await loadedZip.generateAsync({ type: 'base64' });
       const htmlContent = generateExecutableHtml(baseName, base64Data);
 
       // Create new clean organized ZIP
